@@ -16,7 +16,8 @@ using PepperDash.Essentials.Core.Config;
 
 namespace PepperDash.Essentials.DM.AirMedia
 {
-    public class AirMediaController : CrestronGenericBridgeableBaseDevice, IRoutingInputsOutputs, IIROutputPorts, IComPorts
+    [Description("Wrapper class for an AM-200 or AM-300")]
+    public class AirMediaController : CrestronGenericBridgeableBaseDevice, IRoutingNumeric, IIROutputPorts, IComPorts
     {
         public AmX00 AirMedia { get; private set; }
 
@@ -40,7 +41,7 @@ namespace PepperDash.Essentials.DM.AirMedia
         public BoolFeedback AutomaticInputRoutingEnabledFeedback { get; private set; }
 
         public AirMediaController(string key, string name, AmX00 device, DeviceConfig dc, AirMediaPropertiesConfig props)
-            :base(key, name, device)
+            : base(key, name, device)
         {
             AirMedia = device;
 
@@ -51,27 +52,30 @@ namespace PepperDash.Essentials.DM.AirMedia
             InputPorts = new RoutingPortCollection<RoutingInputPort>();
             OutputPorts = new RoutingPortCollection<RoutingOutputPort>();
 
-            InputPorts.Add(new RoutingInputPort(DmPortName.Osd, eRoutingSignalType.Audio | eRoutingSignalType.Video,
+            InputPorts.Add(new RoutingInputPort(DmPortName.Osd, eRoutingSignalType.AudioVideo,
                 eRoutingPortConnectionType.None, new Action(SelectPinPointUxLandingPage), this));
 
-            InputPorts.Add(new RoutingInputPort(DmPortName.AirMediaIn, eRoutingSignalType.Audio | eRoutingSignalType.Video,
+            InputPorts.Add(new RoutingInputPort(DmPortName.AirMediaIn, eRoutingSignalType.AudioVideo,
                 eRoutingPortConnectionType.Streaming, new Action(SelectAirMedia), this));
 
-            InputPorts.Add(new RoutingInputPort(DmPortName.HdmiIn, eRoutingSignalType.Audio | eRoutingSignalType.Video,
+            InputPorts.Add(new RoutingInputPort(DmPortName.HdmiIn, eRoutingSignalType.AudioVideo,
                 eRoutingPortConnectionType.Hdmi, new Action(SelectHdmiIn), this));
 
-            InputPorts.Add(new RoutingInputPort(DmPortName.AirBoardIn, eRoutingSignalType.Video,
+            InputPorts.Add(new RoutingInputPort(DmPortName.AirBoardIn, eRoutingSignalType.AudioVideo,
                 eRoutingPortConnectionType.None, new Action(SelectAirboardIn), this));
 
             if (AirMedia is Am300)
             {
-                InputPorts.Add(new RoutingInputPort(DmPortName.DmIn, eRoutingSignalType.Audio | eRoutingSignalType.Video,
+                InputPorts.Add(new RoutingInputPort(DmPortName.DmIn, eRoutingSignalType.AudioVideo,
                     eRoutingPortConnectionType.DmCat, new Action(SelectDmIn), this));
             }
 
+            OutputPorts.Add(new RoutingOutputPort(DmPortName.HdmiOut, eRoutingSignalType.AudioVideo,
+                eRoutingPortConnectionType.Hdmi, null, this));
+
             AirMedia.AirMedia.AirMediaChange += new Crestron.SimplSharpPro.DeviceSupport.GenericEventHandler(AirMedia_AirMediaChange);
 
-            IsInSessionFeedback = new BoolFeedback( new Func<bool>(() => AirMedia.AirMedia.StatusFeedback.UShortValue == 0 ));
+            IsInSessionFeedback = new BoolFeedback(new Func<bool>(() => AirMedia.AirMedia.StatusFeedback.UShortValue == 0));
             ErrorFeedback = new IntFeedback(new Func<int>(() => AirMedia.AirMedia.ErrorFeedback.UShortValue));
             NumberOfUsersConnectedFeedback = new IntFeedback(new Func<int>(() => AirMedia.AirMedia.NumberOfUsersConnectedFeedback.UShortValue));
             LoginCodeFeedback = new IntFeedback(new Func<int>(() => AirMedia.AirMedia.LoginCodeFeedback.UShortValue));
@@ -103,43 +107,43 @@ namespace PepperDash.Essentials.DM.AirMedia
 
         public override void LinkToApi(BasicTriList trilist, uint joinStart, string joinMapKey, EiscApiAdvanced bridge)
         {
-            var joinMap = new AirMediaControllerJoinMap();
+            var joinMap = new AirMediaControllerJoinMap(joinStart);
 
             var joinMapSerialized = JoinMapHelper.GetSerializedJoinMapForDevice(joinMapKey);
 
             if (!string.IsNullOrEmpty(joinMapSerialized))
                 joinMap = JsonConvert.DeserializeObject<AirMediaControllerJoinMap>(joinMapSerialized);
 
-            joinMap.OffsetJoinNumbers(joinStart);
+            bridge.AddJoinMap(Key, joinMap);
 
             Debug.Console(1, "Linking to Trilist '{0}'", trilist.ID.ToString("X"));
             Debug.Console(0, "Linking to Airmedia: {0}", Name);
 
-            trilist.StringInput[joinMap.Name].StringValue = Name;
+            trilist.StringInput[joinMap.Name.JoinNumber].StringValue = Name;
 
             var commMonitor = this as ICommunicationMonitor;
 
-            commMonitor.CommunicationMonitor.IsOnlineFeedback.LinkInputSig(trilist.BooleanInput[joinMap.IsOnline]);
+            commMonitor.CommunicationMonitor.IsOnlineFeedback.LinkInputSig(trilist.BooleanInput[joinMap.IsOnline.JoinNumber]);
 
-            IsInSessionFeedback.LinkInputSig(trilist.BooleanInput[joinMap.IsInSession]);
-            HdmiVideoSyncDetectedFeedback.LinkInputSig(trilist.BooleanInput[joinMap.HdmiVideoSync]);
+            IsInSessionFeedback.LinkInputSig(trilist.BooleanInput[joinMap.IsInSession.JoinNumber]);
+            HdmiVideoSyncDetectedFeedback.LinkInputSig(trilist.BooleanInput[joinMap.HdmiVideoSync.JoinNumber]);
 
-            trilist.SetSigTrueAction(joinMap.AutomaticInputRoutingEnabled, AirMedia.DisplayControl.EnableAutomaticRouting);
-            trilist.SetSigFalseAction(joinMap.AutomaticInputRoutingEnabled, AirMedia.DisplayControl.DisableAutomaticRouting);
-            AutomaticInputRoutingEnabledFeedback.LinkInputSig(trilist.BooleanInput[joinMap.AutomaticInputRoutingEnabled]);
+            trilist.SetSigTrueAction(joinMap.AutomaticInputRoutingEnabled.JoinNumber, AirMedia.DisplayControl.EnableAutomaticRouting);
+            trilist.SetSigFalseAction(joinMap.AutomaticInputRoutingEnabled.JoinNumber, AirMedia.DisplayControl.DisableAutomaticRouting);
+            AutomaticInputRoutingEnabledFeedback.LinkInputSig(trilist.BooleanInput[joinMap.AutomaticInputRoutingEnabled.JoinNumber]);
 
-            trilist.SetUShortSigAction(joinMap.VideoOut, (u) => SelectVideoOut(u));
+            trilist.SetUShortSigAction(joinMap.VideoOut.JoinNumber, (u) => SelectVideoOut(u));
 
-            VideoOutFeedback.LinkInputSig(trilist.UShortInput[joinMap.VideoOut]);
-            ErrorFeedback.LinkInputSig(trilist.UShortInput[joinMap.ErrorFB]);
-            NumberOfUsersConnectedFeedback.LinkInputSig(trilist.UShortInput[joinMap.NumberOfUsersConnectedFB]);
+            VideoOutFeedback.LinkInputSig(trilist.UShortInput[joinMap.VideoOut.JoinNumber]);
+            ErrorFeedback.LinkInputSig(trilist.UShortInput[joinMap.ErrorFB.JoinNumber]);
+            NumberOfUsersConnectedFeedback.LinkInputSig(trilist.UShortInput[joinMap.NumberOfUsersConnectedFB.JoinNumber]);
 
-            trilist.SetUShortSigAction(joinMap.LoginCode, (u) => AirMedia.AirMedia.LoginCode.UShortValue = u);
-            LoginCodeFeedback.LinkInputSig(trilist.UShortInput[joinMap.LoginCode]);
+            trilist.SetUShortSigAction(joinMap.LoginCode.JoinNumber, (u) => AirMedia.AirMedia.LoginCode.UShortValue = u);
+            LoginCodeFeedback.LinkInputSig(trilist.UShortInput[joinMap.LoginCode.JoinNumber]);
 
-            ConnectionAddressFeedback.LinkInputSig(trilist.StringInput[joinMap.ConnectionAddressFB]);
-            HostnameFeedback.LinkInputSig(trilist.StringInput[joinMap.HostnameFB]);
-            SerialNumberFeedback.LinkInputSig(trilist.StringInput[joinMap.SerialNumberFeedback]);
+            ConnectionAddressFeedback.LinkInputSig(trilist.StringInput[joinMap.ConnectionAddressFB.JoinNumber]);
+            HostnameFeedback.LinkInputSig(trilist.StringInput[joinMap.HostnameFB.JoinNumber]);
+            SerialNumberFeedback.LinkInputSig(trilist.StringInput[joinMap.SerialNumberFeedback.JoinNumber]);
         }
 
         void AirMedia_AirMediaChange(object sender, Crestron.SimplSharpPro.DeviceSupport.GenericEventArgs args)
@@ -202,7 +206,7 @@ namespace PepperDash.Essentials.DM.AirMedia
         /// </summary>
         public void SelectDmIn()
         {
-            AirMedia.DisplayControl.VideoOut = AmX00DisplayControl.eAirMediaX00VideoSource.HDMI;
+            AirMedia.DisplayControl.VideoOut = AmX00DisplayControl.eAirMediaX00VideoSource.DM;
         }
 
         /// <summary>
@@ -210,7 +214,7 @@ namespace PepperDash.Essentials.DM.AirMedia
         /// </summary>
         public void SelectHdmiIn()
         {
-            AirMedia.DisplayControl.VideoOut = AmX00DisplayControl.eAirMediaX00VideoSource.DM;
+            AirMedia.DisplayControl.VideoOut = AmX00DisplayControl.eAirMediaX00VideoSource.HDMI;
         }
 
         public void SelectAirboardIn()
@@ -259,5 +263,57 @@ namespace PepperDash.Essentials.DM.AirMedia
         #endregion
 
 
+
+        #region IRoutingNumeric Members
+
+        public void ExecuteNumericSwitch(ushort input, ushort output, eRoutingSignalType signalType)
+        {
+            if ((signalType & eRoutingSignalType.Video) != eRoutingSignalType.Video) return;
+            if (!Enum.IsDefined(typeof (AmX00DisplayControl.eAirMediaX00VideoSource), input))
+            {
+                Debug.Console(2, this, "Invalid Video Source Index : {0}", input);
+                return;
+            }
+            AirMedia.DisplayControl.VideoOut = (AmX00DisplayControl.eAirMediaX00VideoSource) input;
+        }
+
+        #endregion
+
+        #region IRouting Members
+
+        public void ExecuteSwitch(object inputSelector, object outputSelector, eRoutingSignalType signalType)
+        {
+            Debug.Console(2, this, "Input Selector = {0}", inputSelector.ToString());
+            var handler = inputSelector as Action;
+            if (handler == null) return;
+            handler();
+        }
+
+        #endregion
+    }
+
+    public class AirMediaControllerFactory : EssentialsDeviceFactory<AirMediaController>
+    {
+        public AirMediaControllerFactory()
+        {
+            TypeNames = new List<string>() { "am200", "am300" };
+        }
+
+        public override EssentialsDevice BuildDevice(DeviceConfig dc)
+        {
+            var type = dc.Type.ToLower();
+
+            Debug.Console(1, "Factory Attempting to create new AirMedia Device");
+
+            var props = JsonConvert.DeserializeObject<AirMediaPropertiesConfig>(dc.Properties.ToString());
+            AmX00 amDevice = null;
+            if (type == "am200")
+                amDevice = new Crestron.SimplSharpPro.DM.AirMedia.Am200(props.Control.IpIdInt, Global.ControlSystem);
+            else if (type == "am300")
+                amDevice = new Crestron.SimplSharpPro.DM.AirMedia.Am300(props.Control.IpIdInt, Global.ControlSystem);
+
+            return new AirMediaController(dc.Key, dc.Name, amDevice, dc, props);
+
+        }
     }
 }

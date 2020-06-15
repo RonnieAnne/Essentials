@@ -11,8 +11,10 @@ using PepperDash.Core;
 
 namespace PepperDash.Essentials.Core
 {
-	public class ComPortController : Device, IBasicCommunication
+	public class ComPortController : Device, IBasicCommunicationWithStreamDebugging
 	{
+        public CommunicationStreamDebugging StreamDebugging { get; private set; }
+
 		public event EventHandler<GenericCommMethodReceiveBytesArgs> BytesReceived;
 		public event EventHandler<GenericCommMethodReceiveTextArgs> TextReceived;
 
@@ -20,6 +22,21 @@ namespace PepperDash.Essentials.Core
 
 		ComPort Port;
 		ComPort.ComPortSpec Spec;
+
+	    public ComPortController(string key, Func<EssentialsControlPropertiesConfig, ComPort> postActivationFunc,
+	        ComPort.ComPortSpec spec, EssentialsControlPropertiesConfig config) : base(key)
+	    {
+            StreamDebugging = new CommunicationStreamDebugging(key);
+
+	        Spec = spec;
+
+            AddPostActivationAction(() =>
+            {
+                Port = postActivationFunc(config);
+
+                RegisterAndConfigureComPort();
+            });
+	    }
 
 		public ComPortController(string key, ComPort port, ComPort.ComPortSpec spec)
 			: base(key)
@@ -34,27 +51,31 @@ namespace PepperDash.Essentials.Core
 			Spec = spec;
 			//IsConnected = new BoolFeedback(CommonBoolCue.IsConnected, () => true);
 
-			if (Port.Parent is CrestronControlSystem)
-			{
-
-
-				var result = Port.Register();
-				if (result != eDeviceRegistrationUnRegistrationResponse.Success)
-				{
-					Debug.Console(0, this, "ERROR: Cannot register Com port: {0}", result);
-					return; // false
-				}
-			}
-			var specResult = Port.SetComPortSpec(Spec);
-			if (specResult != 0)
-			{
-				Debug.Console(0, this, "WARNING: Cannot set comspec");
-				return; // false
-			}
-			Port.SerialDataReceived += new ComPortDataReceivedEvent(Port_SerialDataReceived);
+			RegisterAndConfigureComPort();
 		}
 
-		~ComPortController()
+	    private void RegisterAndConfigureComPort()
+	    {
+            if (Port.Parent is CrestronControlSystem)
+            {
+                var result = Port.Register();
+                if (result != eDeviceRegistrationUnRegistrationResponse.Success)
+                {
+                    Debug.Console(0, this, "ERROR: Cannot register Com port: {0}", result);
+                    return; // false
+                }
+            }
+
+	        var specResult = Port.SetComPortSpec(Spec);
+	        if (specResult != 0)
+	        {
+	            Debug.Console(0, this, "WARNING: Cannot set comspec");
+	            return;
+	        }
+	        Port.SerialDataReceived += Port_SerialDataReceived;
+	    }
+
+	    ~ComPortController()
 		{
 			Port.SerialDataReceived -= Port_SerialDataReceived;
 		}
@@ -74,7 +95,12 @@ namespace PepperDash.Essentials.Core
             }
             var textHandler = TextReceived;
             if (textHandler != null)
+            {
+                if (StreamDebugging.RxStreamDebuggingIsEnabled)
+                    Debug.Console(0, this, "Recevied: '{0}'", s);
+
                 textHandler(this, new GenericCommMethodReceiveTextArgs(s));
+            }
         }
 
 		public override bool Deactivate()
@@ -88,7 +114,10 @@ namespace PepperDash.Essentials.Core
 		{
 			if (Port == null)
 				return;
-			Port.Send(text);
+
+            if (StreamDebugging.TxStreamDebuggingIsEnabled)
+                Debug.Console(0, this, "Sending {0} characters of text: '{1}'", text.Length, text);
+            Port.Send(text);
 		}
 
 		public void SendBytes(byte[] bytes)
@@ -96,6 +125,9 @@ namespace PepperDash.Essentials.Core
 			if (Port == null)
 				return;
 			var text = Encoding.GetEncoding(28591).GetString(bytes, 0, bytes.Length);
+            if (StreamDebugging.TxStreamDebuggingIsEnabled)
+                Debug.Console(0, this, "Sending {0} bytes: '{1}'", bytes.Length, ComTextHelper.GetEscapedText(bytes));
+
 			Port.Send(text);
 		}
 

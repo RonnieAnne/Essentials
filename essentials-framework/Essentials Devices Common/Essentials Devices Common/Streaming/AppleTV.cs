@@ -8,14 +8,15 @@ using Crestron.SimplSharpPro.DeviceSupport;
 using Newtonsoft.Json;
 using PepperDash.Core;
 using PepperDash.Essentials.Core;
+using PepperDash.Essentials.Core.Config;
 using PepperDash.Essentials.Core.Bridges;
 using PepperDash.Essentials.Core.Routing;
 
 namespace PepperDash.Essentials.Devices.Common
 {
+    [Description("Wrapper class for an IR-Controlled AppleTV")]
 	public class AppleTV : EssentialsBridgeableDevice, IDPad, ITransport, IUiDisplayInfo, IRoutingOutputs
 	{
-
 		public IrOutputPortController IrPort { get; private set; }
 		public const string StandardDriverName = "Apple AppleTV-v2.ir";
 		public uint DisplayUiType { get { return DisplayUiConstants.TypeAppleTv; } }
@@ -145,25 +146,41 @@ namespace PepperDash.Essentials.Devices.Common
 
 	    public override void LinkToApi(BasicTriList trilist, uint joinStart, string joinMapKey, EiscApiAdvanced bridge)
 	    {
-            var joinMap = new AppleTvJoinMap();
+            var joinMap = new AppleTvJoinMap(joinStart);
 
             var joinMapSerialized = JoinMapHelper.GetSerializedJoinMapForDevice(joinMapKey);
 
             if (!string.IsNullOrEmpty(joinMapSerialized))
                 joinMap = JsonConvert.DeserializeObject<AppleTvJoinMap>(joinMapSerialized);
 
-            joinMap.OffsetJoinNumbers(joinStart);
+            bridge.AddJoinMap(Key, joinMap);
 
             Debug.Console(1, "Linking to Trilist '{0}'", trilist.ID.ToString("X"));
             Debug.Console(0, "Linking to Bridge Type {0}", GetType().Name);
 
-            trilist.SetBoolSigAction(joinMap.UpArrow, Up);
-            trilist.SetBoolSigAction(joinMap.DnArrow, Down);
-            trilist.SetBoolSigAction(joinMap.LeftArrow, Left);
-            trilist.SetBoolSigAction(joinMap.RightArrow, Right);
-            trilist.SetBoolSigAction(joinMap.Select, Select);
-            trilist.SetBoolSigAction(joinMap.Menu, Menu);
-            trilist.SetBoolSigAction(joinMap.PlayPause, Play);
+            trilist.SetBoolSigAction(joinMap.UpArrow.JoinNumber, Up);
+            trilist.SetBoolSigAction(joinMap.DnArrow.JoinNumber, Down);
+            trilist.SetBoolSigAction(joinMap.LeftArrow.JoinNumber, Left);
+            trilist.SetBoolSigAction(joinMap.RightArrow.JoinNumber, Right);
+            trilist.SetBoolSigAction(joinMap.Select.JoinNumber, Select);
+            trilist.SetBoolSigAction(joinMap.Menu.JoinNumber, Menu);
+            trilist.SetBoolSigAction(joinMap.PlayPause.JoinNumber, Play);
 	    }
 	}
+
+    public class AppleTVFactory : EssentialsDeviceFactory<AppleTV>
+    {
+        public AppleTVFactory()
+        {
+            TypeNames = new List<string>() { "appletv" };
+        }
+
+        public override EssentialsDevice BuildDevice(DeviceConfig dc)
+        {
+            Debug.Console(1, "Factory Attempting to create new AppleTV Device");
+            var irCont = IRPortHelper.GetIrOutputPortController(dc);
+            return new AppleTV(dc.Key, dc.Name, irCont);
+        }
+    }
+
 }
